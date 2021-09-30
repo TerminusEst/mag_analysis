@@ -15,104 +15,19 @@ from gcvspline import SmoothedNSpline
 supermagdatafolder = '/media/blake/2TB_HDD/Datasets/SUPERMAG/DATA/'
 INTERMAGdatafolder = '/media/blake/2TB_HDD/Datasets/INTERMAGNET_DATA/IAGA2002_DEF/'
 DSTfolder = '/media/blake/2TB_HDD/Datasets/DST_SYMH/'
-
 ###############################################################################
 
-def SuperMag_data_local(start, end, return_arrays = False, badfrac = 0.1):
+def SuperMag_data_local(start, end, badfrac = 0.1, calc_efield = True):
 
     """Parameters
     -----------
     start, end = datetime objects to find data
-    return_arrays = return arrays rather than dictionary. False by default
-    badfrac = fraction of nans that are acceptable. Fractions greater than this not returned
+    badfrac = fraction of nans that are acceptable. Time-series with fractions greater than this not returned
+    calc_efield = If True, returns ex,ey,eh as calculated using the Quebec profile
 
     Returns
     -----------
-    if return_arrays is False:
-    returns sitenames, glon, glat, mlon, mlat, timedate, mlt, bx, by, bh arrays
-
-    otherwise:
-    returns sitenames, glon, glat, mlon, mlat, timedate, mlt, bx, by, bh as dictionary"""
-
-    start_year = start.year
-    fn = supermagdatafolder + 'all_stations_none%04d.netcdf' % start_year
-    ds = nc.Dataset(fn)
-    lenn = ds['id'].shape[0]
-    
-    # Get sitenames
-    id_raw = np.array(ds['id'][0]).astype(str)
-    sitenames = np.array([x[0]+x[1]+x[2] for x in id_raw])
-    
-    # Read in timedate
-    yr = np.array(ds['time_yr'][:])
-    mo = np.array(ds['time_mo'][:])
-    dy = np.array(ds['time_dy'][:])
-    hr = np.array(ds['time_hr'][:])
-    mt = np.array(ds['time_mt'][:])
-    timedate = np.array([datetime.datetime(y,m,d,H,M,0) for y,m,d,H,M in zip(yr, mo, dy, hr, mt)])
-    ind = (timedate >= start) * (timedate <= end)
-    timedate = timedate[ind]
-    
-    # get lat,lon, mlat, mlon
-    glat = np.array(ds['glat'][0])
-    glon = np.array(ds['glon'][0])
-    glon[glon >180] -= 360      # have 
-    mlat = np.array(ds['mlat'][0])
-    mlon = np.array(ds['mlon'][0])
-    
-    # magnetic local time
-    mlt = np.array(ds['mlt'][ind]).T
-    
-    # read in bx, by (geographic vector)
-    bx = np.array(ds['dbn_nez'][ind]).T
-    by = np.array(ds['dbe_nez'][ind]).T
-    bz = np.array(ds['dbz_nez'][ind]).T
-    bh = np.sqrt(bx**2 + by**2)
-
-
-    # Check for nans
-    goodind, lenn = [], len(timedate)
-    for i in bh:
-        if np.sum(np.isnan(i)) >= (badfrac * lenn):
-            goodind.append(False)
-        else:
-            goodind.append(True)
-    goodind = np.array(goodind)
-
-    # return as individual lists
-    if return_arrays == True:
-            return sitenames[goodind], glon[goodind], glat[goodind], mlon[goodind], mlat[goodind], timedate[goodind], mlt[goodind], bh[goodind]
-
-    # else return as dictionary
-    mydict = {}
-    mydict['sitenames'] = sitenames[goodind]
-    mydict['glon'] = glon[goodind]
-    mydict['glat'] = glat[goodind]
-    mydict['mlon'] = mlon[goodind]
-    mydict['mlat'] = mlat[goodind]
-    mydict['timedate'] = timedate
-    mydict['mlt'] = mlt[goodind]
-    mydict['bh'] = bh[goodind]
-    mydict['bx'] = bx[goodind]
-    mydict['by'] = by[goodind]
-
-    return mydict
-    
-def SuperMag_data_local3(start, end, return_arrays = False, badfrac = 0.1, calc_efield = True):
-
-    """Parameters
-    -----------
-    start, end = datetime objects to find data
-    return_arrays = return arrays rather than dictionary. False by default
-    badfrac = fraction of nans that are acceptable. Fractions greater than this not returned
-
-    Returns
-    -----------
-    if return_arrays is False:
-    returns sitenames, glon, glat, mlon, mlat, timedate, mlt, bx, by, bh arrays
-
-    otherwise:
-    returns sitenames, glon, glat, mlon, mlat, timedate, mlt, bx, by, bh as dictionary"""
+    OUTPUT = dictionary of variables by sitecode"""
 
     start_year = start.year
     fn = supermagdatafolder + 'all_stations_none%04d.netcdf' % start_year
@@ -148,14 +63,15 @@ def SuperMag_data_local3(start, end, return_arrays = False, badfrac = 0.1, calc_
     by = np.array(ds['dbe_nez'][ind]).T
     bh = np.sqrt(bx**2 + by**2)
     bz = np.array(ds['dbz_nez'][ind]).T
-    
+
     # Check for nans
     goodind, lenn = [], len(timedate)
-    for i in bh:
-        if np.sum(np.isnan(i)) >= (badfrac * lenn):
+    for i, v in enumerate(bh):
+        if np.sum(np.isnan(v)) >= (badfrac * lenn):
             goodind.append(False)
         else:
             goodind.append(True)
+            
     goodind = np.array(goodind)
 
     Qres, Qthick = model_profiles("Q")
@@ -163,27 +79,31 @@ def SuperMag_data_local3(start, end, return_arrays = False, badfrac = 0.1, calc_
     freq[0] = 1e-100
     ZZ = Z_Tensor_1D(Qres, Qthick, freq)
 
-
     OUTPUT = {}
-
-    for i, v in enumerate(sitenames):
-        print(i)
-
-        if calc_efield == False:
+    for i, v in enumerate(sitenames[goodind]):
+        gn, gt, mn, mt = glon[goodind][i], glat[goodind][i], mlon[goodind][i], mlat[goodind][i]
+        td, mltt = timedate, mlt[goodind][i]
+        x, y, z, h = bx[goodind][i], by[goodind][i], bz[goodind][i], bh[goodind][i]
         
-            OUTPUT[v] = {'glon':glon[i], 'glat':glat[i], 'mlon':mlon[i], 'mlat':mlat[i], 
-                    'mlt':mlat[i], 'timedate':timedate[i], 'bx':bx[i], 'by':by[i], 
-                    'bz':bz[i], 'bh':bh[i]}
+        if calc_efield == False:
+            OUTPUT[v] = {'glon':gn, 'glat':gt, 'mlon':mn, 'mlat':mt, 
+                    'mlt':mltt, 'timedate':td, 'bx':x, 'by':y, 
+                    'bz':z, 'bh':h}
         else:
-            ex, ey = E_Field_1D(bx[i], by[i], Qres, Qthick, 60,  ZZ)
+            # need to interpolate bx and by, get rid of nans
+            X = np.arange(len(x))
+            ind = np.isfinite(x)
+            newbx = np.interp(X, X[ind], x[ind])
+            newby = np.interp(X, X[ind], y[ind])
+            
+            ex, ey = E_Field_1D(newbx, newby, Qres, Qthick, 60,  ZZ)
             eh = np.sqrt(ex**2 + ey**2)
             
-            OUTPUT[v] = {'glon':glon[i], 'glat':glat[i], 'mlon':mlon[i], 'mlat':mlat[i], 
-                    'mlt':mlat[i], 'timedate':timedate, 'bx':bx[i], 'by':by[i], 
-                    'bz':bz[i], 'bh':bh[i], 'ex':ex, 'ey':ey, 'eh':eh}
+            OUTPUT[v] = {'glon':gn, 'glat':gt, 'mlon':mn, 'mlat':mt, 
+                    'mlt':mltt, 'timedate':td, 'bx':x, 'by':y, 
+                    'bz':z, 'bh':h, 'ex':ex, 'ey':ey, 'eh':eh}
 
     return OUTPUT
-
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 
 def angle_func(x, y):
@@ -430,7 +350,8 @@ def E_Field_1D(bx, by, resistivities, thicknesses, timestep = 60., Z = None, cal
 
 def Period(bx, timestep):
 
-    
+    """return period for some input for fft calc"""
+
     freq = np.fft.fftfreq(new_bx.size, d = timestep)
     freq[0] = 1e-100
     per = 1./freq
@@ -797,7 +718,6 @@ def INTERMAGNET_single_site(site, start_day, numofdays = 3, quiet = False):
     ZZ = Z_Tensor_1D(Qres, Qthick, freq)
     
     wanted_days = [start_day + datetime.timedelta(days = x) for x in range(numofdays)]
-    print(wanted_days)
 
     # First, get the names of all of the available data files for the three days
     all_data_files = []
@@ -922,11 +842,10 @@ def get_mlat_EH(md2):
     MLATS, EH = [], []
     for i in md2:
         site = md2[i]
-        MLATS.append(site.mlat)
-        EH.append(np.max(site.eh[50:-50]))
+        MLATS.append(site['mlat'])
+        EH.append(np.max(site['eh'][50:-50]))
     
     MLATS, EH = np.array(MLATS), np.array(EH)
-    
     ind = MLATS.argsort()
     
     return MLATS[ind], EH[ind]
@@ -958,7 +877,13 @@ def fit_spline_lat_e(lats, maxe, bootstrap_num = 500, lat_cutoff = 10, uselog = 
     X = lats
     Y = maxe
     ind = X >= lat_cutoff
-    
+
+    # add a very small number to each mlat element
+    # auroral boundary algo needs all mlat values to be unique    
+    if len(np.unique(X)) != len(X):
+        incr = np.linspace(0.000001, 0.000005, len(X))
+        X = X + incr 
+
     if uselog == True:
         x1, y1 = X[ind], np.log10(Y[ind])
     else:
@@ -1004,7 +929,6 @@ def fit_spline_lat_e(lats, maxe, bootstrap_num = 500, lat_cutoff = 10, uselog = 
     return xthresh, ythresh, gradients, np.array([xx1, abs_yy1])
 
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
-
 
 
 

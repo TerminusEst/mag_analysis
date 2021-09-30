@@ -42,7 +42,7 @@ def read_in_raw_SWMF_magfiles(infold, inputcols, outfold='', outprefix = ''):
         outputdata = dictionary of 'Lonlat', 'Timedate', and each of the columns asked for
 
     otherwise:
-        returns outputdata and saves to whatever outfold was specified as"""
+        returns outputdata and additionally saves to whatever outfold was specified as"""
         
     # get the column index for the supplied variables
     cols = np.array(['Bx', 'By', 'Bz', 'Mx', 'My', 'Mz', 'Fx', 'Fy', 'Fz', 'Hx', 'Hy', 'Hz', 'Px', 'Py', 'Pz'])
@@ -86,18 +86,15 @@ def read_in_raw_SWMF_magfiles(infold, inputcols, outfold='', outprefix = ''):
         
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 
-def read_in_SWMF_magfiles(infolder):
+def read_in_SWMF_magfiles(infolder, prefix = ''):
 
     """Read in previously numpified mag outputs files as dictionary
 
     Parameters
     -----------
-    infold = location of folder with mag files (usually GM/IO2/)
-    inputcols = list of wanted variables, e.g: ['bx', 'by', 'bz']
-        possible variables: bx, by, bz, mx, my, mz, fx, fy, fz, hx, hy, hz, px, py, pz
-    outfold = location of folder to save outputs. Leave as '' (the default) to not save 
-    outputprefix = optional prefix when saving outputs. '' by default
-
+    infolder = location of folder with numpy mag files 
+    prefix = prefix of saved files that you want
+    
     Returns
     -----------
     if outfold == '' (as default):
@@ -109,6 +106,7 @@ def read_in_SWMF_magfiles(infolder):
 
     filenames = sorted(os.listdir(infolder))
     filenames = [x for x in filenames if '.npy' in x]
+    filenames = [x for x in filenames if prefix in x]
 
     outdata = {}
 
@@ -117,7 +115,7 @@ def read_in_SWMF_magfiles(infolder):
     outdata['Timedate'] = timedate
     
     lonlatfile = [x for x in filenames if 'lonlat.npy' in x][0]
-    lonlat = np.load(infolder + timedatefile, allow_pickle = True)
+    lonlat = np.load(infolder + lonlatfile, allow_pickle = True)
     outdata['LonLat'] = lonlat
     
     cols = np.array(['Bx', 'By', 'Bz', 'Mx', 'My', 'Mz', 'Fx', 'Fy', 'Fz', 'Hx', 'Hy', 'Hz', 'Px', 'Py', 'Pz'])
@@ -340,7 +338,7 @@ def get_magpause_distance(folder, makeplot = False, imagefolder = ''):
             plt.ylim([-20,20])
 
             plt.tight_layout()
-            plt.savefig(imagefolder + "%04d.png" % iii)
+            plt.savefig(imagefolder + "MPAUSE_%04d.png" % iii)
             #plt.show()
     if makeplot == False:
         return np.array(TD), np.array(MPAUSE)
@@ -401,7 +399,6 @@ def rbody_calculator(Rbody, td, glon, glat):
 
     return c.data[0]
     
-
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 
 def xyz_to_lonlat(x,y,z):
@@ -452,7 +449,7 @@ def Jaz_plane_plotter(filename, imagefolder, slices = np.arange(-4, 4.01, .1)[::
     indd = (x>-20)*(x<20)*(y>-20)*(y<20)*(z>-20)*(z<20) # reduce the data
     maxx, minn = np.max(Jaz), np.min(Jaz)
 
-    fig = plt.figure(1, figsize = (20, 10))
+    fig = plt.figure(1, figsize = (10, 20))
     for i, v in enumerate(slices):
         print("X, Y = %0.2f Re" % v)
         wantedz = v
@@ -488,43 +485,43 @@ def Jaz_plane_plotter(filename, imagefolder, slices = np.arange(-4, 4.01, .1)[::
         levels = np.linspace(-1*maxx, maxx, 100)
         r1 = np.sqrt(1-wantedz**2)
 
-        clf()
+        plt.clf()
 
-        ax1 = subplot(121)
+        ax1 = plt.subplot(121)
         ax1.set_aspect('equal', 'box')
-        title("Z = %.2f" % wantedz, fontsize = 24)
-        tricontourf(uuu, vvv, interpped, levels = levels, cmap = 'RdBu_r')
-        cb = colorbar()
+        plt.title("Z = %.2f" % wantedz, fontsize = 24)
+        plt.tricontourf(uuu, vvv, interpped, levels = levels, cmap = 'RdBu_r')
+        cb = plt.colorbar()
         cb.set_label("$J_{Az}$", fontsize = 24)
-        grid(True)
+        plt.grid(True)
 
-        xlim([-10, 10])
-        ylim([-10, 10])
+        plt.xlim([-10, 10])
+        plt.ylim([-10, 10])
 
-        xlabel("X ($R_E$)", fontsize = 20)
-        ylabel("Y ($R_E$)", fontsize = 20)
+        plt.xlabel("X ($R_E$)", fontsize = 20)
+        plt.ylabel("Y ($R_E$)", fontsize = 20)
         circle1 = plt.Circle((0, 0), r1, color='k')
         ax1.add_artist(circle1)
             
-        ax2 = subplot(122)
+        ax2 = plt.subplot(122)
         ax2.set_aspect('equal', 'box')
-        title("Y = %.2f" % wantedz, fontsize = 24)
+        plt.title("Y = %.2f" % wantedz, fontsize = 24)
 
-        tricontourf(uuu3, vvv3, interpped3, levels = levels, cmap = 'RdBu_r')
-        cb = colorbar()
+        plt.tricontourf(uuu3, vvv3, interpped3, levels = levels, cmap = 'RdBu_r')
+        cb = plt.colorbar()
         cb.set_label("$J_{Az}$", fontsize = 24)
-        grid(True)
+        plt.grid(True)
 
         circle1 = plt.Circle((0, 0), r1, color='k')
         ax2.add_artist(circle1)
 
-        xlim([-10, 10])
-        ylim([-10, 10])
+        plt.xlim([-10, 10])
+        plt.ylim([-10, 10])
 
-        xlabel("X ($R_E$)", fontsize = 20)
-        ylabel("Z ($R_E$)", fontsize = 20)
+        plt.xlabel("X ($R_E$)", fontsize = 20)
+        plt.ylabel("Z ($R_E$)", fontsize = 20)
 
-        savefig(imagefolder + "%04d.png" % i)
+        plt.savefig(imagefolder + "MSPHERE_%04d.png" % i)
         
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 
