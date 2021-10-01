@@ -1,5 +1,5 @@
 # mag_analysis
-Routines for analysing simulated and historical geomagnetic storm data with Python
+Routines for analysing simulated and historical geomagnetic storm data with Python.
 
 ## GroundMag_functions.py
 
@@ -15,3 +15,6 @@ Routines for analysing simulated and historical geomagnetic storm data with Pyth
 - Calculate magnetopause standoff distance for BATSRUS y=0 2D magnetosphere files
 - Plot azimuthal J in near Earth magnetosphere for different planes around Earth
 
+## Test_runs.py
+
+- Examples of most of the functions, which read in data from **INPUT_DATA**, save data in **OUTPUT_DATA**, and save images in **OUTPUT_IMAGES**
