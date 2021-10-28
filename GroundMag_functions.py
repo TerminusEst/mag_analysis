@@ -105,6 +105,177 @@ def SuperMag_data_local(start, end, badfrac = 0.1, calc_efield = True):
 
     return OUTPUT
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
+def FetchSMIndices(user, start, numofdays, wanted = 'ALL'):
+    """Retrieve SME, SML, SMU indices from SuperMag
+
+    This function requires the supermag api functions to be loaded in memory to fetch the data:
+    https://supermag.jhuapl.edu/mag/?fidelity=low&tab=api&start=2001-01-01T00%3A00%3A00.000Z&interval=23%3A59
+    
+    Parameters
+    -----------
+    user = username for downloading SuperMag Data
+    start = start day (datetime obj)
+    numofdays = number of days from start to download
+    wanted = list of wanted attrs (e.g., ['SME', 'SML']
+        downloads all by default
+
+    Returns
+    -----------
+    output = dictionary of wanted values as arrays + 'td' array
+    """
+    #ZZZ
+    status, vals = SuperMAGGetIndices(user, start, 86400*numofdays, 'all', FORMAT='list')
+
+    if (wanted == 'ALL'):
+        wanted = list(vals[0].keys())[1:]
+
+    output = {x:[] for x in wanted}
+    output['td'] = []
+
+    for step in vals:
+        output['td'].append(Float2Time(step['tval']))
+
+        for j in wanted:
+            output[j].append(step[j])
+
+    ind = np.array(output['td']) >= start
+
+    for i in output.keys():
+        output[i] = np.array(output[i])[ind]
+
+    return output
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
+
+def FetchSMData(user, start, numofdays, savefolder, badfrac=0.1, nanflags=True):
+    """Retrieve all available SuperMagnet data for a specified period
+    If data has not already been downloaded, fetches data from Supermag
+    
+    This function requires the supermag api functions to be loaded in memory to fetch the data:
+    https://supermag.jhuapl.edu/mag/?fidelity=low&tab=api&start=2001-01-01T00%3A00%3A00.000Z&interval=23%3A59
+    
+    Parameters
+    -----------
+    user = username for downloading SuperMag Data
+    start = start day (datetime obj)
+    numofdays = number of days from start to download
+    savefolder = folder where downloaded data will be saved as json. This function
+        looks here first for saved data before downloading.
+    badfrac = tolerable fraction of data that is 99999.0. Sites with more bad data
+        than this fraction will be ignored
+    nanflags = will set 99999.0 values to nans if True (True by default)    
+
+    Returns
+    -----------
+    Dictionary which has the following data as keys:
+    {td, sitenames, glon, glat, mlon, mlat, mcolat, 
+                BNm, BEm, BZm, BNg, BEg, BZg, MLT, DECL, SZA}
+    """
+    # Look at all saved .jsons
+    filenames = [x for x in sorted(os.listdir(savefolder)) if '.json' in x]
+    startstr = str(start)[:10]
+
+    exists = False
+    for filename in filenames:
+        if startstr in filename:
+            daystring = filename[:-5].split("_")[-1]
+
+            if int(daystring) >= numofdays:
+                print("Supermag data already exists locally")
+                print(filename)
+ 
+                exists = True
+                break
+            continue
+
+    if exists == False:
+        print("Supermag data not local, fetching:")
+
+        STATUS, master, badindex = [], [], []
+
+        #ZZZ
+        status, stations = SuperMAGGetInventory(user, startstr, extent = 86400*numofdays)
+        for iii in stations:
+            print("Fetching: ", iii)
+            #ZZZ
+            status, A = SuperMAGGetData(user, startstr, extent=86400*numofdays, 
+                                           flagstring='all', station = iii, FORMAT = 'list')
+            quickvals = np.array([x['N']['nez'] for x in A])
+
+            # get rid of data if too many bullshit values
+            if np.sum(quickvals>999990.0) >= badfrac*len(quickvals):
+                badindex.append(False)
+                print(iii, "BAD")
+            else:
+                badindex.append(True)
+
+            STATUS.append(status)
+            master.append(A)
+
+        badindex = np.array(badindex)
+        master, stations = np.array(master)[badindex], np.array(stations)[badindex]
+
+        # Make the Supermag data a dict for saving later
+        output = {}
+        for i in master:
+            output[i[0]['iaga']] = list(i)
+
+        filename = "SM_DATA_" + str(start)[:10] + '_%1d.json' % (numofdays)
+        with open(savefolder + filename, mode='w') as f:
+            #print(savefolder + filename)
+            json.dump(output, f)
+        f.close()
+
+    # Now read in the data
+    with open(savefolder + filename,) as r:
+        #print(savefolder + filename)
+        rr = json.load(r)
+
+    sitenames = np.array(list(rr.keys()))
+
+    timedate = np.array([Float2Time(x['tval']) for x in rr[sitenames[0]]])
+    glon = np.array([rr[x][0]['glon'] for x in sitenames])
+    glon[glon>180] -= 360 
+    glat = np.array([rr[x][0]['glat'] for x in sitenames])
+    mlon = np.array([rr[x][0]['mlon'] for x in sitenames])
+    mlat = np.array([rr[x][0]['mlat'] for x in sitenames])
+    mcolat = np.array([rr[x][0]['mcolat'] for x in sitenames])
+
+    BNm = np.zeros((len(timedate), len(sitenames)))
+
+    BEm, BZm, BNg, BEg, BZg = np.copy(BNm), np.copy(BNm), np.copy(BNm), np.copy(BNm), np.copy(BNm)
+    MLT, DECL, SZA = np.copy(BNm), np.copy(BNm), np.copy(BNm)
+
+    for j, v2 in enumerate(sitenames):
+        for i, v1 in enumerate(rr[v2]):
+            BNm[i][j] = v1['N']['nez']
+            BEm[i][j] = v1['E']['nez']
+            BZm[i][j] = v1['Z']['nez']
+            
+            BNg[i][j] = v1['N']['geo']
+            BEg[i][j] = v1['E']['geo']
+            BZg[i][j] = v1['Z']['geo']
+
+            MLT[i][j] = v1['mlt']
+            DECL[i][j] = v1['decl']
+            SZA[i][j] = v1['sza']
+
+    if (nanflags == True):
+        BNm[BNm==999999.0] = np.nan
+        BEm[BEm==999999.0] = np.nan
+        BZm[BZm==999999.0] = np.nan
+
+        BNg[BNg==999999.0] = np.nan
+        BEg[BEg==999999.0] = np.nan
+        BZg[BZg==999999.0] = np.nan
+
+    # only use points after start of sim data
+    i = (timedate>=start)
+    output = {'td':timedate[i], 'sitenames':sitenames, 'glon':glon, 'glat':glat,
+             'mlon':mlon, 'mlat':mlat, 'mcolat':mcolat, 'BNm':BNm[i], 'BEm':BEm[i], 'BZm':BZm[i],
+             'BNg':BNg[i], 'BEg':BEg[i], 'BZg':BZg[i], 'mlt':MLT[i], 'decl':DECL[i], 'sza':SZA[i]}     
+    return output
+
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-
 
 def angle_func(x, y):
 
